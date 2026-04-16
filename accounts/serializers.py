@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from BackDevStat.accounts.models import User
+from .models import User
 
 
 class InscriptionUserSerializer(serializers.ModelSerializer):

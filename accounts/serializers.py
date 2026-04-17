@@ -9,12 +9,14 @@ class InscriptionUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['nom_complet', 'email', 'password', 'confirm_password']
+        fields = ['username', 'email', 'password', 'confirm_password', 'regle_confidentialite']
+        read_only_fields = ['username']
 
     def validate(self, attrs):
         email = attrs.get('email')
         password = attrs.get('password')
         confirm_password = attrs.get('confirm_password')
+        regle_confidentialite = attrs.get('regle_confidentialite')
 
         if not email:
             raise serializers.ValidationError({'email': "L'email est requis"})
@@ -22,6 +24,10 @@ class InscriptionUserSerializer(serializers.ModelSerializer):
         if not password or not confirm_password:
             raise serializers.ValidationError({
                 'password': 'Les deux champs de mot de passe sont requis'
+            })
+        if regle_confidentialite is not True:
+            raise serializers.ValidationError({
+                'regle_confidentialite': 'la règle de confidentialité doit être validée'
             })
 
         if password != confirm_password:

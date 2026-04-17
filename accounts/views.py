@@ -19,6 +19,7 @@ class UserInscriptionViewset(CreateAPIView):
     def create(self, request, *args, **kwargs):
         response = super().create(request, *args, **kwargs)
         return Response({
-            "message": "well user creation",
-            "status": status.HTTP_201_CREATED
+            "message": "utilisateur créé",
+            "status": status.HTTP_201_CREATED,
+            "username": response.data['username'],
         })

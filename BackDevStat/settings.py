@@ -56,6 +56,12 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    )
+}
+
 ROOT_URLCONF = 'BackDevStat.urls'
 
 TEMPLATES = [
@@ -88,6 +94,9 @@ DATABASES = {
         'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
         'HOST': os.getenv('DB_HOST'),
         'PORT': os.getenv('DB_PORT'),
+        'TEST': {
+            'NAME': os.getenv('DB_TEST_NAME'),
+        }
     }
 }
 

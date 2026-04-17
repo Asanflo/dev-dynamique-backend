@@ -18,14 +18,23 @@ class IsOwnerOrMemberOrReadOnly(BasePermission):
 
 #  responsable du projet ou utilisateur a qui la tache est assigne
 class IsOwnerOrMemberOrAssignee(BasePermission):
+
+    def has_permission(self, request, view):
+        # L'utilisateur doit être authentifié (redondant si IsAuthenticated
+        # est déjà dans permission_classes, mais défense en profondeur)
+        return request.user and request.user.is_authenticated
+
     def has_object_permission(self, request, view, obj):
         user = request.user
 
-        if request.method in SAFE_METHODS:
-            return (
-                obj.project.owner == user or
-                obj.project.members.filter(id=user.id).exists()
-            )
+        is_project_member = (
+            obj.project.owner == user or
+            obj.project.members.filter(id=user.id).exists()
+        )
 
-        # write actions
+        # Lecture + commentaires : owner ou member suffisent
+        if request.method in SAFE_METHODS or getattr(view, 'action', None) == 'comments':
+            return is_project_member
+
+        # Écriture (PUT, PATCH, DELETE) : owner ou assignee
         return obj.project.owner == user or obj.assignee == user

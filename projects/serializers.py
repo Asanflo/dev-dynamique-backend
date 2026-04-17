@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Project, Task
+from .models import Project, Task, Comment
 from accounts.models import User
 
 
@@ -17,7 +17,7 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     # écriture : emails des membres
     members_emails = serializers.ListField(
-        child=serializers.EmailField(),
+        child=serializers.EmailField(allow_blank=True),
         write_only=True,
         required=False
     )
@@ -49,7 +49,7 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     # create
     def create(self, validated_data):
-        emails = validated_data.pop('members_emails', [])
+        emails = [e for e in validated_data.pop('members_emails', []) if e.strip()]
         project = Project.objects.create(**validated_data)
         # recherche users
         users = User.objects.filter(email__in=emails)
@@ -68,7 +68,8 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     # update
     def update(self, instance, validated_data):
-        emails = validated_data.pop('members_emails', None)
+        raw_emails = validated_data.pop('members_emails', None)
+        emails = [e for e in raw_emails if e.strip()] if raw_emails is not None else None
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -95,54 +96,109 @@ class ProjectSerializer(serializers.ModelSerializer):
         return instance
 
 # task serializer
+# Utilisé par TaskViewSet — project soumis par l'utilisateur, restreint au owner
 class TaskSerializer(serializers.ModelSerializer):
-    project_title = serializers.CharField(source='project.title', read_only=True)
+    project_title     = serializers.CharField(source='project.title', read_only=True)
+    assignee_username = serializers.CharField(source='assignee.username', read_only=True)
 
-    assignee_username = serializers.CharField(
-        source='assignee.username',
-        read_only=True
-    )
-
-    project = serializers.PrimaryKeyRelatedField(
-        queryset=Project.objects.none()
+    project  = serializers.PrimaryKeyRelatedField(queryset=Project.objects.none())
+    assignee = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        required=False,
+        allow_null=True
     )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         request = self.context.get('request')
-        if request:
-            user = request.user
-
-            # seulement projets où il est owner
-            self.fields['project'].queryset = Project.objects.filter(owner=user)
+        if request and request.user.is_authenticated:
+            # restreint aux projets dont il est owner
+            self.fields['project'].queryset = Project.objects.filter(
+                owner=request.user
+            )
 
     def validate(self, attrs):
-        project = attrs.get('project') or getattr(self.instance, 'project', None)
+        project  = attrs.get('project') or getattr(self.instance, 'project', None)
         assignee = attrs.get('assignee')
 
         if project and assignee:
             if (
-                    assignee != project.owner and
-                    assignee not in project.members.all()
+                assignee != project.owner and
+                not project.members.filter(id=assignee.id).exists()
             ):
                 raise serializers.ValidationError({
-                    "assignee": "Doit être membre du projet"
+                    "assignee": "L'assignee doit être membre du projet."
                 })
 
         return attrs
 
     class Meta:
-        model = Task
+        model  = Task
+        fields = [
+            'id', 'task_name', 'description',
+            'project', 'project_title',
+            'assignee', 'assignee_username',
+            'status', 'due_date', 'limit_date'
+        ]
+
+
+# Utilisé par ProjectViewSet.tasks() — project injecté par la vue via save()
+class TaskCreateFromProjectSerializer(serializers.ModelSerializer):
+    project_title     = serializers.CharField(source='project.title', read_only=True)
+    assignee_username = serializers.CharField(source='assignee.username', read_only=True)
+    project           = serializers.PrimaryKeyRelatedField(read_only=True)
+    assignee          = serializers.PrimaryKeyRelatedField(
+                            queryset=User.objects.all(),
+                            required=False,
+                            allow_null=True
+                        )
+
+    def validate(self, attrs):
+        # project vient du contexte car read_only → pas dans attrs
+        project  = self.context.get('project')
+        assignee = attrs.get('assignee')
+
+        if project and assignee:
+            if (
+                assignee != project.owner and
+                not project.members.filter(id=assignee.id).exists()
+            ):
+                raise serializers.ValidationError({
+                    "assignee": "L'assignee doit être membre du projet."
+                })
+
+        return attrs
+
+    class Meta:
+        model  = Task
+        fields = [
+            'id', 'task_name', 'description',
+            'project', 'project_title',
+            'assignee', 'assignee_username',
+            'status', 'due_date', 'limit_date'
+        ]
+
+# comment serializer
+
+class CommentSerializer(serializers.ModelSerializer):
+    author_username = serializers.CharField(
+        source='author.username',
+        read_only=True
+    )
+
+    class Meta:
+        model  = Comment
         fields = [
             'id',
-            'task_name',
-            'description',
-            'project',
-            'project_title',
-            'assignee',
-            'assignee_username',
-            'status',
-            'due_date',
-            'limit_date'
+            'task',
+            'author',
+            'author_username',
+            'content',
+            'created_at'
         ]
+        read_only_fields = ['author', 'task', 'created_at']
+
+    def validate_content(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Le contenu ne peut pas être vide.")
+        return value

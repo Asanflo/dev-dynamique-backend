@@ -94,3 +94,55 @@ class ProjectSerializer(serializers.ModelSerializer):
 
         return instance
 
+# task serializer
+class TaskSerializer(serializers.ModelSerializer):
+    project_title = serializers.CharField(source='project.title', read_only=True)
+
+    assignee_username = serializers.CharField(
+        source='assignee.username',
+        read_only=True
+    )
+
+    project = serializers.PrimaryKeyRelatedField(
+        queryset=Project.objects.none()
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        request = self.context.get('request')
+        if request:
+            user = request.user
+
+            # seulement projets où il est owner
+            self.fields['project'].queryset = Project.objects.filter(owner=user)
+
+    def validate(self, attrs):
+        project = attrs.get('project') or getattr(self.instance, 'project', None)
+        assignee = attrs.get('assignee')
+
+        if project and assignee:
+            if (
+                    assignee != project.owner and
+                    assignee not in project.members.all()
+            ):
+                raise serializers.ValidationError({
+                    "assignee": "Doit être membre du projet"
+                })
+
+        return attrs
+
+    class Meta:
+        model = Task
+        fields = [
+            'id',
+            'task_name',
+            'description',
+            'project',
+            'project_title',
+            'assignee',
+            'assignee_username',
+            'status',
+            'due_date',
+            'limit_date'
+        ]
